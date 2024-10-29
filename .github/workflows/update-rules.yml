@@ -1,0 +1,52 @@
+name: Update Rules
+
+on:
+  schedule:
+    - cron: "0 20 */7 * *" # 4:00 AM UTC+8
+  workflow_dispatch:
+
+jobs:
+  update-rules:
+    name: Update Rules
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git Config
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global init.defaultBranch master
+      - name: Download meta-rules-dat
+        run: |
+          curl -fsSLo meta-rules-dat.zip https://github.com/MetaCubeX/meta-rules-dat/archive/refs/heads/sing.zip
+          unzip -q meta-rules-dat.zip -d ./
+          mv meta-rules-dat-sing/geo/* ./
+          rm -rf meta-rules-dat-sing
+      - name: Download AdguardFilters
+        run: |
+          curl -fsSLo AdguardFilters.zip https://github.com/AdguardTeam/AdguardFilters/archive/refs/heads/master.zip
+          unzip -q AdguardFilters.zip -d ./
+      - name: Setup sing-box
+        run: |
+          version=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep tag_name | cut -d "\"" -f4 | sed 's/v//')
+          curl -fsSLo sing-box.deb "https://github.com/SagerNet/sing-box/releases/download/v1.10.1/sing-box_${version}_linux_amd64.deb"
+          sudo dpkg -i sing-box.deb
+      - name: Convert AdguardFilters
+        run: |
+          find "AdguardFilters-master/" -name "*.txt" -exec sing-box rule-set convert --type adguard {} &> /dev/null \;
+          mv AdguardFilters-master/ adguard
+      - name: Clean Useless Files
+        run: |
+          rm AdguardFilters.zip meta-rules-dat.zip sing-box.deb
+          cd adguard && find . -maxdepth 1 ! -name "*Filter*" ! -name "." -exec rm -rf {} \;
+      - name: Git Push
+        run: |
+          curl -fsSLo downloader.json https://raw.githubusercontent.com/senzyo/sing-box-rules/refs/heads/master/downloader.json
+          curl -fsSLo downloader.srs https://raw.githubusercontent.com/senzyo/sing-box-rules/refs/heads/master/downloader.srs
+          curl -fsSLo README.md https://raw.githubusercontent.com/senzyo/sing-box-rules/refs/heads/master/README.md
+          mkdir -p .github/workflows/
+          curl -fsSLo .github/workflows/update-rules.yml https://raw.githubusercontent.com/senzyo/sing-box-rules/refs/heads/master/.github/workflows/update-rules.yml
+          git init
+          git add -A
+          git commit -m "更新于 $(TZ='UTC-8' date -I'seconds')"
+          git remote add origin https://${{ secrets.PERSONAL_TOKEN }}@github.com/senzyo/sing-box-rules.git
+          git push -uf origin master:master
